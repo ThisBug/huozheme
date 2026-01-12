@@ -27,35 +27,35 @@ const Layout: React.FC<LayoutProps> = ({ children, showBottomNav = true }) => {
 
       {/* Bottom Navigation */}
       {showBottomNav && (
-        <div className="fixed bottom-0 w-full max-w-[480px] z-50 bg-medical-dark/95 backdrop-blur-xl border-t border-primary/20 px-6 py-3 flex justify-between items-center pb-6">
+        <div className="fixed bottom-0 w-full max-w-[480px] z-50 bg-medical-dark/95 backdrop-blur-xl border-t border-primary/20 px-6 py-2 flex justify-between items-center pb-5">
           <button 
             onClick={() => navigate('/')}
-            className={`flex flex-col items-center gap-1 transition-colors ${isActive('/') ? 'text-primary' : 'text-slate-600 hover:text-slate-400'}`}
+            className={`flex flex-col items-center gap-0.5 transition-colors ${isActive('/') ? 'text-primary' : 'text-slate-600 hover:text-slate-400'}`}
           >
-            <span className={`material-symbols-outlined text-2xl ${isActive('/') ? 'neon-glow' : ''}`}>
+            <span className={`material-symbols-outlined text-[22px] ${isActive('/') ? 'neon-glow' : ''}`}>
               {isActive('/') ? 'ecg_heart' : 'pulse_alert'}
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-widest">状态</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest">状态</span>
           </button>
 
           <button 
             onClick={() => navigate('/manage')}
-            className={`flex flex-col items-center gap-1 transition-colors ${isActive('/manage') ? 'text-primary' : 'text-slate-600 hover:text-slate-400'}`}
+            className={`flex flex-col items-center gap-0.5 transition-colors ${isActive('/manage') ? 'text-primary' : 'text-slate-600 hover:text-slate-400'}`}
           >
-            <span className={`material-symbols-outlined text-2xl ${isActive('/manage') ? 'neon-glow' : ''}`}>
+            <span className={`material-symbols-outlined text-[22px] ${isActive('/manage') ? 'neon-glow' : ''}`}>
               description
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-widest">管理</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest">管理</span>
           </button>
 
           <button 
             onClick={() => navigate('/settings')}
-            className={`flex flex-col items-center gap-1 transition-colors ${isActive('/settings') ? 'text-primary' : 'text-slate-600 hover:text-slate-400'}`}
+            className={`flex flex-col items-center gap-0.5 transition-colors ${isActive('/settings') ? 'text-primary' : 'text-slate-600 hover:text-slate-400'}`}
           >
-            <span className={`material-symbols-outlined text-2xl ${isActive('/settings') ? 'neon-glow' : ''}`}>
+            <span className={`material-symbols-outlined text-[22px] ${isActive('/settings') ? 'neon-glow' : ''}`}>
               settings
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-widest">设置</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest">设置</span>
           </button>
         </div>
       )}

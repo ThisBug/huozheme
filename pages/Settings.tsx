@@ -1,17 +1,115 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { useApp } from '../context/AppContext';
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
+  const { settings, updateSettings, devices } = useApp();
+  const [showToast, setShowToast] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [phoneError, setPhoneError] = useState(false);
   
-  // State for settings
-  const [syncFrequency, setSyncFrequency] = useState('1小时');
-  const [minSteps, setMinSteps] = useState(2000);
-  const [checkInInterval, setCheckInInterval] = useState(72);
+  // Progress bar state for clearing data
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearProgress, setClearProgress] = useState(0);
+
+  const handleUpdate = (newSettings: any) => {
+      updateSettings(newSettings);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+  };
+
+  const handleClearData = () => {
+      setShowClearModal(false);
+      setIsClearing(true);
+      setClearProgress(0);
+
+      const interval = setInterval(() => {
+          setClearProgress(prev => {
+              if (prev >= 100) {
+                  clearInterval(interval);
+                  // 1. Clear Storage
+                  localStorage.clear();
+                  // 2. Force navigate to root (Home) hash and reload to reset all Context state to defaults
+                  window.location.hash = '/';
+                  window.location.reload();
+                  return 100;
+              }
+              return prev + 5; // increment speed
+          });
+      }, 50);
+  };
+
+  const validatePhone = (phone: string) => {
+      // Strict 11-digit mobile number starting with 1
+      return /^1\d{10}$/.test(phone);
+  };
+
+  const handlePhoneBlur = () => {
+      if (settings.userPhone && !validatePhone(settings.userPhone)) {
+          setPhoneError(true);
+      } else {
+          setPhoneError(false);
+      }
+  };
 
   return (
     <Layout>
+      {/* Feedback Toast */}
+      {showToast && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-fade-in bg-medical-panel border border-primary text-primary px-4 py-2 rounded-full shadow-[0_0_15px_rgba(57,255,20,0.3)] flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+              <span className="text-xs font-bold">设置已保存</span>
+          </div>
+      )}
+
+      {/* Clear Data Confirmation Modal */}
+      {showClearModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+              <div className="w-full max-w-sm bg-medical-panel border border-danger/50 rounded-lg p-6 shadow-[0_0_30px_rgba(255,49,49,0.15)] relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-danger/20 via-danger to-danger/20"></div>
+                  <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-danger">delete_forever</span>
+                      警告：清除数据
+                  </h3>
+                  <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+                      此操作将彻底删除所有本地存储的配置、遗嘱草稿、联系人和设备信息。数据清除后<strong className="text-white">无法恢复</strong>。
+                  </p>
+                  <div className="flex gap-3">
+                      <button 
+                        onClick={() => setShowClearModal(false)}
+                        className="flex-1 py-3 border border-white/10 rounded font-bold text-slate-300 hover:bg-white/5 transition-colors"
+                      >
+                          取消
+                      </button>
+                      <button 
+                        onClick={handleClearData}
+                        className="flex-1 py-3 bg-danger/10 border border-danger/50 text-danger rounded font-bold hover:bg-danger/20 transition-colors shadow-[0_0_15px_rgba(255,49,49,0.2)]"
+                      >
+                          确认清除
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Clearing Progress Overlay */}
+      {isClearing && (
+          <div className="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md">
+              <div className="w-64">
+                  <p className="text-primary font-bold text-center mb-4 uppercase tracking-widest animate-pulse">系统重置中...</p>
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-white/10">
+                      <div 
+                        className="h-full bg-danger shadow-[0_0_10px_#ff3131]" 
+                        style={{ width: `${clearProgress}%`, transition: 'width 0.05s linear' }}
+                      ></div>
+                  </div>
+                  <p className="text-right text-xs font-mono text-slate-500 mt-2">{clearProgress}%</p>
+              </div>
+          </div>
+      )}
+
       <div className="sticky top-0 z-50 flex items-center bg-medical-dark/90 backdrop-blur-md p-4 border-b border-primary/20 justify-between">
         <div className="flex size-12 shrink-0 items-center justify-start">
           <span className="material-symbols-outlined text-3xl text-primary neon-glow">settings</span>
@@ -25,32 +123,74 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      <div className="p-4 space-y-4 animate-fade-in">
+      <div className="p-4 space-y-4 animate-fade-in pb-10">
         {/* Device Section */}
         <div className="bg-medical-panel border border-primary/20 rounded p-4">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">已连接设备</h3>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/20 border border-primary/30">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-              <span className="text-[9px] text-primary font-bold">在线</span>
+              <span className="text-[9px] text-primary font-bold">在线 ({devices.length})</span>
             </span>
           </div>
-          <div className="flex items-center gap-4 bg-white/5 p-3 rounded border border-white/5">
-            <span className="material-symbols-outlined text-primary text-3xl">watch</span>
-            <div className="flex-1">
-              <div className="text-sm font-bold">智能终端 V3</div>
-              <div className="text-[10px] text-slate-500 font-mono">ID: LW-0988-X</div>
+          {devices.length > 0 ? (
+            <div className="flex items-center gap-4 bg-white/5 p-3 rounded border border-white/5">
+                <span className="material-symbols-outlined text-primary text-3xl">{devices[0].type === 'watch' ? 'watch' : 'smartphone'}</span>
+                <div className="flex-1">
+                <div className="text-sm font-bold">{devices[0].name}</div>
+                <div className="text-[10px] text-slate-500 font-mono">ID: {devices[0].id.substring(0,8)}...</div>
+                </div>
+                <button 
+                    onClick={() => navigate('/devices')}
+                    className="text-[10px] border border-primary/30 px-3 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
+                >
+                    管理
+                </button>
             </div>
-            <button 
-                onClick={() => navigate('/devices')}
-                className="text-[10px] border border-primary/30 px-3 py-1 rounded text-primary hover:bg-primary/10 transition-colors"
-            >
-                管理
-            </button>
+          ) : (
+            <div className="text-center py-2 text-slate-500 text-xs">暂无设备连接</div>
+          )}
+        </div>
+
+        {/* User Contact Info for Self-Notification */}
+        <div className="bg-medical-panel border border-primary/20 rounded p-4">
+          <div className="flex items-center gap-2 mb-4">
+             <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">本人接收通知</h3>
+             <span className="material-symbols-outlined text-primary text-sm">person_alert</span>
+          </div>
+          <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
+             若未在倒计时结束前签到，系统将先尝试通过以下方式通知您本人。若您在确认延迟时间内未响应，系统将联系紧急联系人。
+          </p>
+          <div className="space-y-3">
+             <div className="relative">
+                <span className={`absolute left-3 top-3 material-symbols-outlined text-[16px] ${phoneError ? 'text-danger' : 'text-slate-500'}`}>phone_iphone</span>
+                <input 
+                    type="tel" 
+                    placeholder="本人手机号 (可选)"
+                    value={settings.userPhone}
+                    onBlur={handlePhoneBlur}
+                    onChange={(e) => {
+                        handleUpdate({ userPhone: e.target.value });
+                        if(phoneError) setPhoneError(false);
+                    }}
+                    className={`w-full bg-white/5 border ${phoneError ? 'border-danger' : 'border-white/10'} rounded px-3 py-2 pl-9 text-xs text-white placeholder:text-slate-600 focus:border-primary focus:ring-0 transition-colors font-mono`}
+                />
+                {phoneError && <p className="text-[10px] text-danger mt-1 ml-1">格式错误：仅支持11位手机号（以1开头）</p>}
+             </div>
+             <div className="relative">
+                <span className="absolute left-3 top-3 text-slate-500 material-symbols-outlined text-[16px]">email</span>
+                <input 
+                    type="email" 
+                    placeholder="本人邮箱 (可选)"
+                    value={settings.userEmail}
+                    onChange={(e) => handleUpdate({ userEmail: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 pl-9 text-xs text-white placeholder:text-slate-600 focus:border-primary focus:ring-0 transition-colors font-mono"
+                />
+             </div>
           </div>
         </div>
 
-        {/* Survival Status Confirmation Interval (New) */}
+        {/* Survival Status Confirmation Interval */}
         <div className="bg-medical-panel border border-primary/20 rounded p-4">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">生存状态确认间隔</h3>
@@ -60,8 +200,8 @@ const Settings: React.FC = () => {
             {[12, 24, 48, 72].map((hours) => (
               <button 
                 key={hours}
-                onClick={() => setCheckInInterval(hours)}
-                className={`p-2 border ${checkInInterval === hours ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
+                onClick={() => handleUpdate({ checkInInterval: hours })}
+                className={`p-2 border ${settings.checkInInterval === hours ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
               >
                 {hours}小时
               </button>
@@ -69,28 +209,40 @@ const Settings: React.FC = () => {
           </div>
         </div>
 
-        {/* Thresholds */}
+        {/* Confirmation Delay (Grace Period) */}
+        <div className="bg-medical-panel border border-primary/20 rounded p-4">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">确认延迟时间 (预警缓冲)</h3>
+                <span className="material-symbols-outlined text-primary text-sm">hourglass_top</span>
+            </div>
+            <p className="text-[10px] text-slate-500 mb-3">
+             倒计时结束后等待您响应的时间，超时后将触发遗嘱协议。
+            </p>
+            <div className="grid grid-cols-4 gap-2">
+                {[30, 120, 360, 720].map((mins) => (
+                <button 
+                    key={mins}
+                    onClick={() => handleUpdate({ confirmationDelay: mins })}
+                    className={`p-2 border ${settings.confirmationDelay === mins ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
+                >
+                    {mins < 60 ? `${mins}分钟` : `${mins/60}小时`}
+                </button>
+                ))}
+            </div>
+        </div>
+
+        {/* Thresholds (Removed Max HR) */}
         <div className="bg-medical-panel border border-primary/20 rounded p-4">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">警报阈值</h3>
-            <span className="material-symbols-outlined text-primary text-sm">monitor_heart</span>
+            <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">运动阈值</h3>
+            <span className="material-symbols-outlined text-primary text-sm">directions_walk</span>
           </div>
           <div className="space-y-6 pt-2">
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-[10px] font-mono text-slate-400">最大心率</span>
-                <span className="text-[10px] font-mono text-primary">160 次/分</span>
-              </div>
-              <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-primary w-[75%] shadow-[0_0_10px_rgba(57,255,20,0.5)]"></div>
-              </div>
-            </div>
-            
             {/* Slider for Min Steps */}
             <div>
               <div className="flex justify-between mb-2">
                 <span className="text-[10px] font-mono text-slate-400">每日最少步数</span>
-                <span className="text-[10px] font-mono text-primary">{minSteps.toLocaleString()} 步</span>
+                <span className="text-[10px] font-mono text-primary">{settings.minSteps.toLocaleString()} 步</span>
               </div>
               <div className="relative h-6 w-full flex items-center">
                  <input 
@@ -98,8 +250,8 @@ const Settings: React.FC = () => {
                     min="500" 
                     max="10000" 
                     step="500" 
-                    value={minSteps}
-                    onChange={(e) => setMinSteps(parseInt(e.target.value))}
+                    value={settings.minSteps}
+                    onChange={(e) => handleUpdate({ minSteps: parseInt(e.target.value) })}
                     className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
                   />
                   <style>{`
@@ -132,8 +284,8 @@ const Settings: React.FC = () => {
             {['15分钟', '1小时', '6小时'].map((freq) => (
                 <button 
                     key={freq}
-                    onClick={() => setSyncFrequency(freq)}
-                    className={`p-2 border ${syncFrequency === freq ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
+                    onClick={() => handleUpdate({ syncFrequency: freq })}
+                    className={`p-2 border ${settings.syncFrequency === freq ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
                 >
                     {freq}
                 </button>
@@ -151,8 +303,8 @@ const Settings: React.FC = () => {
             <span className="text-sm font-medium">授权与权限</span>
             <span className="material-symbols-outlined text-slate-500 text-lg group-hover:text-primary">chevron_right</span>
           </button>
-          <button onClick={() => alert('清除本地数据 (模拟)')} className="w-full py-3 flex items-center justify-between border-b border-white/5 text-danger hover:bg-danger/10 px-2 rounded transition-colors group">
-            <span className="text-sm font-bold">清除本地数据</span>
+          <button onClick={() => setShowClearModal(true)} className="w-full py-3 flex items-center justify-between border-b border-white/5 text-danger hover:bg-danger/10 px-2 rounded transition-colors group">
+            <span className="text-sm font-bold">清除本地数据 (重置)</span>
             <span className="material-symbols-outlined text-danger/50 text-lg group-hover:text-danger">delete_forever</span>
           </button>
         </div>

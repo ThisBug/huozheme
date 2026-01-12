@@ -1,19 +1,20 @@
-import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { Contact } from '../types';
+import { useApp } from '../context/AppContext';
 
 const Manage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { contacts, will, deleteContact } = useApp();
   const [activeTab, setActiveTab] = useState<'will' | 'contacts'>('will');
-  const [hasWill, setHasWill] = useState(false); // Default to false to show "Create Will" state
 
-  // State for contacts to allow deletion
-  const [contacts, setContacts] = useState<Contact[]>([
-    { id: '1', name: 'Sarah Chen', role: '主要 / 配偶', phone: '', status: 'verified', avatarColor: 'bg-indigo-500' },
-    { id: '2', name: 'Michael Lee', role: '执行人 / 律师', phone: '', status: 'verified', avatarColor: 'bg-emerald-600' },
-    { id: '3', name: 'David Wong', role: '备用 / 朋友', phone: '', status: 'pending', avatarColor: 'bg-slate-600' },
-  ]);
+  // Check for navigation state to switch tabs (e.g., returning from AddContact)
+  useEffect(() => {
+    if (location.state && (location.state as any).tab) {
+        setActiveTab((location.state as any).tab);
+    }
+  }, [location]);
 
   // Swipe logic state
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
@@ -23,12 +24,10 @@ const Manage: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [contactToDelete, setContactToDelete] = useState<string | null>(null);
 
+  const hasWill = will.content.length > 0;
+
   const handleTouchStart = (e: React.TouchEvent, id: string) => {
     touchStartX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-     // Optional: Implement real-time tracking if desired, but simplified endpoint logic is often safer for web apps
   };
 
   const handleTouchEnd = (e: React.TouchEvent, id: string) => {
@@ -48,18 +47,28 @@ const Manage: React.FC = () => {
     touchStartX.current = null;
   };
 
-  const confirmDelete = (id: string) => {
+  const confirmDelete = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation(); // Prevent navigation
       setContactToDelete(id);
       setShowDeleteModal(true);
   };
 
   const executeDelete = () => {
       if (contactToDelete) {
-          setContacts(contacts.filter(c => c.id !== contactToDelete));
+          deleteContact(contactToDelete);
           setContactToDelete(null);
           setOpenSwipeId(null);
           setShowDeleteModal(false);
       }
+  };
+
+  const handleContactClick = (id: string) => {
+      // Don't navigate if swiping
+      if (openSwipeId === id) {
+          setOpenSwipeId(null);
+          return;
+      }
+      navigate(`/add-contact?id=${id}`);
   };
 
   return (
@@ -104,9 +113,6 @@ const Manage: React.FC = () => {
           <span className="text-[10px] text-slate-400 font-mono">遗产管理</span>
         </div>
         <div className="flex w-12 items-center justify-end">
-          <button onClick={() => navigate('/notifications')} className="flex size-10 items-center justify-center rounded bg-medical-panel border border-primary/30 text-primary hover:bg-primary/10 transition-colors">
-            <span className="material-symbols-outlined text-xl">notifications</span>
-          </button>
         </div>
       </div>
 
@@ -133,24 +139,31 @@ const Manage: React.FC = () => {
               <div className="neon-border bg-medical-panel/80 p-5 rounded-lg flex flex-col gap-4">
                 <div className="flex justify-between items-start">
                   <div className="flex flex-col">
-                    <span className="text-[10px] font-mono text-primary/70 tracking-widest uppercase">归档编号: LW-2023-9082</span>
+                    <span className="text-[10px] font-mono text-primary/70 tracking-widest uppercase">归档编号: {will.id || 'PENDING'}</span>
                     <h3 className="text-xl font-bold text-white mt-1">最后遗愿与遗嘱</h3>
                   </div>
-                  <div className="flex items-center gap-1 bg-primary/10 px-2 py-0.5 border border-primary/30 rounded">
-                    <span className="material-symbols-outlined text-[14px] text-primary">verified_user</span>
-                    <span className="text-[10px] font-bold text-primary">已签署</span>
-                  </div>
+                  {will.isSigned ? (
+                    <div className="flex items-center gap-1 bg-primary/10 px-2 py-0.5 border border-primary/30 rounded">
+                        <span className="material-symbols-outlined text-[14px] text-primary">verified_user</span>
+                        <span className="text-[10px] font-bold text-primary">已签署</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 bg-slate-800 px-2 py-0.5 border border-white/10 rounded">
+                        <span className="material-symbols-outlined text-[14px] text-slate-400">edit_note</span>
+                        <span className="text-[10px] font-bold text-slate-300">草稿</span>
+                    </div>
+                  )}
                 </div>
                 <div className="h-32 bg-black/40 border border-white/5 p-3 overflow-hidden relative group">
                   <div className="absolute inset-0 bg-gradient-to-b from-transparent to-medical-panel/90 z-10 pointer-events-none"></div>
-                  <p className="text-[11px] font-mono text-slate-400 leading-relaxed text-justify">
-                    我，[姓名已隐去]，神智清醒，特此声明此文件为我的最后遗嘱。关于我的数字资产、社交账号及个人档案，我授权指定的联系人按以下方式处理... 我的数字遗产包括但不限于云端照片、银行访问令牌和加密钱包。我希望我的悼念仪式保持私密...
+                  <p className="text-[11px] font-mono text-slate-400 leading-relaxed text-justify whitespace-pre-wrap">
+                    {will.content}
                   </p>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-white/5">
                   <div className="flex flex-col">
                     <span className="text-[9px] font-mono text-slate-500 uppercase">最后修改</span>
-                    <span className="text-[12px] font-mono text-slate-300">2023.10.24 14:30</span>
+                    <span className="text-[12px] font-mono text-slate-300">{will.lastUpdated ? new Date(will.lastUpdated).toLocaleString() : 'N/A'}</span>
                   </div>
                   <button 
                     onClick={() => navigate('/editor')}
@@ -173,9 +186,7 @@ const Manage: React.FC = () => {
                       创建一份以确保您的数字资产、社交账号及隐私数据得到妥善处理。
                   </p>
                   <button 
-                      onClick={() => {
-                        navigate('/editor');
-                      }}
+                      onClick={() => navigate('/editor')}
                       className="flex items-center gap-2 bg-primary px-8 py-3 rounded-lg text-black font-black text-sm uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all shadow-[0_0_20px_rgba(57,255,20,0.3)] group"
                   >
                       <span className="material-symbols-outlined text-xl group-hover:rotate-12 transition-transform">add_circle</span>
@@ -192,57 +203,59 @@ const Manage: React.FC = () => {
           <div className="space-y-4 animate-fade-in relative overflow-hidden min-h-[400px]">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-mono text-primary/70 tracking-[0.2em] uppercase">紧急联系人</h4>
-              <span className="text-[10px] font-mono text-slate-500">{contacts.length}/5 活跃</span>
+              <span className="text-[10px] font-mono text-slate-500">{contacts.length}/3 (最大)</span>
             </div>
 
-            {contacts.map((contact) => (
-              <div 
-                key={contact.id} 
-                className="relative overflow-hidden rounded-r-lg group"
-                onTouchStart={(e) => handleTouchStart(e, contact.id)}
-                onTouchEnd={(e) => handleTouchEnd(e, contact.id)}
-              >
-                  {/* Background Delete Button (revealed on slide) */}
-                  <div className={`absolute inset-y-0 right-0 w-24 bg-danger/20 flex items-center justify-center transition-all duration-300 border-l border-danger/30 z-0 ${openSwipeId === contact.id ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full'}`}>
-                      <button 
-                        onClick={() => confirmDelete(contact.id)}
-                        className="flex flex-col items-center justify-center size-full text-danger hover:bg-danger/30 transition-colors"
-                      >
-                          <span className="material-symbols-outlined mb-1">delete</span>
-                          <span className="text-[10px] font-bold">删除</span>
-                      </button>
-                  </div>
-
-                  {/* Foreground Content */}
-                  <div 
-                    className={`bg-medical-panel border-l-2 ${contact.status === 'verified' ? 'border-l-primary' : 'border-l-slate-600'} border border-white/10 p-4 rounded-r-lg hover:bg-white/5 transition-transform duration-300 z-10 relative bg-medical-panel`}
-                    style={{ transform: openSwipeId === contact.id ? 'translateX(-96px)' : 'translateX(0)' }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`size-10 rounded-full ${contact.status === 'verified' ? 'bg-slate-800' : 'bg-slate-800'} border border-white/10 flex items-center justify-center`}>
-                          <span className={`material-symbols-outlined ${contact.status === 'verified' ? 'text-slate-400' : 'text-slate-600'}`}>person</span>
-                        </div>
-                        <div>
-                          <p className={`text-sm font-bold ${contact.status === 'verified' ? 'text-white' : 'text-slate-400'}`}>{contact.name}</p>
-                          <p className="text-[10px] font-mono text-slate-500">{contact.role}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <div className="flex items-center gap-1.5">
-                          <div className={`size-2 rounded-full ${contact.status === 'verified' ? 'bg-primary animate-pulse shadow-[0_0_5px_#39ff14]' : 'bg-slate-600'}`}></div>
-                          <span className={`text-[10px] font-bold ${contact.status === 'verified' ? 'text-primary' : 'text-slate-600'}`}>
-                            {contact.status === 'verified' ? '就绪' : '待定'}
-                          </span>
-                        </div>
-                        {contact.status === 'verified' && (
-                            <span className="text-[9px] font-mono text-slate-600">身份已核实</span>
-                        )}
-                      </div>
+            {contacts.length === 0 ? (
+                <div className="text-center py-8 text-slate-500 text-sm">暂无紧急联系人，请添加。</div>
+            ) : (
+                contacts.map((contact) => (
+                <div 
+                    key={contact.id} 
+                    className="relative overflow-hidden rounded-r-lg group"
+                    onTouchStart={(e) => handleTouchStart(e, contact.id)}
+                    onTouchEnd={(e) => handleTouchEnd(e, contact.id)}
+                    onClick={() => handleContactClick(contact.id)}
+                >
+                    {/* Background Delete Button (revealed on slide) */}
+                    <div className={`absolute inset-y-0 right-0 w-24 bg-danger/20 flex items-center justify-center transition-all duration-300 border-l border-danger/30 z-0 ${openSwipeId === contact.id ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full'}`}>
+                        <button 
+                            onClick={(e) => confirmDelete(e, contact.id)}
+                            className="flex flex-col items-center justify-center size-full text-danger hover:bg-danger/30 transition-colors"
+                        >
+                            <span className="material-symbols-outlined mb-1">delete</span>
+                            <span className="text-[10px] font-bold">删除</span>
+                        </button>
                     </div>
-                  </div>
-              </div>
-            ))}
+
+                    {/* Foreground Content */}
+                    <div 
+                        className={`bg-medical-panel border-l-2 ${contact.status === 'verified' ? 'border-l-primary' : 'border-l-slate-600'} border border-white/10 p-4 rounded-r-lg hover:bg-white/5 transition-transform duration-300 z-10 relative bg-medical-panel active:bg-white/5`}
+                        style={{ transform: openSwipeId === contact.id ? 'translateX(-96px)' : 'translateX(0)' }}
+                    >
+                        <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className={`size-10 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center`}>
+                              <span className="font-bold text-slate-400 text-sm">{contact.name.substring(0, 2).toUpperCase()}</span>
+                            </div>
+                            <div>
+                            <p className={`text-sm font-bold ${contact.status === 'verified' ? 'text-white' : 'text-slate-400'}`}>{contact.name}</p>
+                            <p className="text-[10px] font-mono text-slate-500">{contact.role}</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-1.5">
+                            <div className={`size-2 rounded-full ${contact.status === 'verified' ? 'bg-primary animate-pulse shadow-[0_0_5px_#39ff14]' : 'bg-slate-600'}`}></div>
+                            <span className={`text-[10px] font-bold ${contact.status === 'verified' ? 'text-primary' : 'text-slate-600'}`}>
+                                {contact.status === 'verified' ? '有效' : '待定'}
+                            </span>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+                ))
+            )}
 
             <button 
               onClick={() => navigate('/add-contact')}
@@ -252,7 +265,7 @@ const Manage: React.FC = () => {
               <span className="text-xs font-bold uppercase tracking-widest">添加新联系人</span>
             </button>
             
-            <p className="text-center text-[10px] text-slate-600 mt-4 italic">左滑联系人卡片可进行管理操作</p>
+            <p className="text-center text-[10px] text-slate-600 mt-4 italic">左滑联系人卡片可进行删除，点击卡片可编辑</p>
           </div>
         )}
       </div>

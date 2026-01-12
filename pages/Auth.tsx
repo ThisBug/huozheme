@@ -1,8 +1,24 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useApp } from '../context/AppContext';
 
 const Auth: React.FC = () => {
   const navigate = useNavigate();
+  const { status, toggleAuthorization } = useApp();
+  const [agreed, setAgreed] = useState(false);
+
+  const handleAuthorize = () => {
+      if (!agreed) return;
+      toggleAuthorization(true);
+      navigate(-1);
+  };
+
+  const handleRevoke = () => {
+      if(window.confirm('确定要撤销授权吗？紧急情况下遗产协议将失效。')) {
+        toggleAuthorization(false);
+        setAgreed(false);
+      }
+  };
 
   return (
     <div className="bg-medical-dark font-display text-white min-h-screen relative overflow-hidden flex flex-col">
@@ -56,19 +72,47 @@ const Auth: React.FC = () => {
             </p>
         </div>
 
-        <div className="py-2">
-            <label className="flex gap-x-3 py-3 flex-row items-start cursor-pointer group">
-                <input type="checkbox" className="mt-1 h-5 w-5 rounded border-primary/40 border-2 bg-transparent text-primary focus:ring-0 focus:ring-offset-0 focus:border-primary transition-colors" />
-                <p className="text-white/80 text-sm font-normal leading-tight group-hover:text-white transition-colors">
-                    我已阅读并完全理解“遗产执行协议”的条款，并同意其执行。
-                </p>
-            </label>
-        </div>
+        {status.isAuthorized ? (
+             <div className="py-6">
+                <div className="bg-primary/10 border border-primary/30 rounded p-4 mb-4 text-center">
+                    <span className="material-symbols-outlined text-primary text-4xl mb-2">check_circle</span>
+                    <p className="text-primary font-bold">已授权</p>
+                    <p className="text-xs text-primary/70 mt-1">授权时间：{new Date().toLocaleDateString()}</p>
+                </div>
+                <button 
+                    onClick={handleRevoke} 
+                    className="w-full bg-danger/10 border border-danger/30 text-danger font-bold py-4 rounded-xl flex items-center justify-center gap-3 active:scale-[0.98] transition-all hover:bg-danger/20"
+                >
+                    <span className="material-symbols-outlined font-bold">cancel</span>
+                    <span className="text-lg">撤销授权</span>
+                </button>
+             </div>
+        ) : (
+            <>
+                <div className="py-2">
+                    <label className="flex gap-x-3 py-3 flex-row items-start cursor-pointer group">
+                        <input 
+                            type="checkbox" 
+                            checked={agreed}
+                            onChange={(e) => setAgreed(e.target.checked)}
+                            className="mt-1 h-5 w-5 rounded border-primary/40 border-2 bg-transparent text-primary focus:ring-0 focus:ring-offset-0 focus:border-primary transition-colors" 
+                        />
+                        <p className="text-white/80 text-sm font-normal leading-tight group-hover:text-white transition-colors">
+                            我已阅读并完全理解“遗产执行协议”的条款，并同意其执行。
+                        </p>
+                    </label>
+                </div>
 
-         <button onClick={() => navigate(-1)} className="w-full bg-primary text-black font-bold py-4 rounded-xl flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(57,255,20,0.3)] active:scale-[0.98] transition-all hover:brightness-110 mt-2">
-            <span className="material-symbols-outlined font-bold">fingerprint</span>
-            <span className="text-lg">立即授权</span>
-        </button>
+                <button 
+                    onClick={handleAuthorize} 
+                    disabled={!agreed}
+                    className={`w-full font-bold py-4 rounded-xl flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(57,255,20,0.3)] active:scale-[0.98] transition-all mt-2 ${agreed ? 'bg-primary text-black hover:brightness-110' : 'bg-slate-700 text-slate-400 cursor-not-allowed shadow-none'}`}
+                >
+                    <span className="material-symbols-outlined font-bold">fingerprint</span>
+                    <span className="text-lg">立即授权</span>
+                </button>
+            </>
+        )}
         
         <div className="flex items-center justify-center gap-2 mt-6 text-white/40 text-[10px] uppercase tracking-tighter">
             <span className="material-symbols-outlined text-[12px]">security</span>

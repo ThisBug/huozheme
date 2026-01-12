@@ -3,26 +3,27 @@ export interface Contact {
   name: string;
   role: string;
   phone: string;
+  email: string;
   status: 'verified' | 'pending';
-  avatarColor: string;
+  priority: boolean;
+  avatarColor?: string;
 }
 
 export interface LogEntry {
   id: string;
   title: string;
-  timestamp: string;
+  timestamp: string; // ISO String
   description: string;
-  type: 'success' | 'update' | 'config';
-  daysAgo?: string;
+  type: 'success' | 'update' | 'config' | 'alert';
 }
 
 export interface Notification {
   id: string;
   title: string;
   description: string;
-  time: string;
-  type: 'alert' | 'success' | 'info';
-  isNew: boolean;
+  time: string; // ISO String
+  category: 'system' | 'emergency';
+  read: boolean;
 }
 
 export interface Device {
@@ -33,5 +34,35 @@ export interface Device {
   battery: number;
   type: 'watch' | 'phone';
   status: 'connected' | 'disconnected';
-  image: string;
+  image?: string;
+}
+
+export interface WillData {
+  content: string;
+  lastUpdated: string | null;
+  isSigned: boolean;
+  id?: string;
+}
+
+export interface AppSettings {
+  checkInInterval: number; // Hours
+  minSteps: number;
+  syncFrequency: string;
+  // New fields
+  confirmationDelay: number; // Minutes
+  userPhone: string;
+  userEmail: string;
+}
+
+export interface UserStatus {
+  lastCheckIn: number; // Timestamp
+  status: 'active' | 'warning' | 'critical';
+  isAuthorized: boolean; // Legal authorization signed
+}
+
+// New Interface for Real-time Data
+export interface HealthData {
+  heartRate: number;
+  steps: number;
+  lastUpdated: number;
 }
