@@ -2,14 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
+import { NativeBridge } from '../services/nativeBridge';
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
-  const { settings, updateSettings, devices } = useApp();
+  const { settings, updateSettings, devices, nukeUserData } = useApp();
   const [showToast, setShowToast] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [phoneError, setPhoneError] = useState(false);
   
+  // Permissions State
+  const [healthPerm, setHealthPerm] = useState(false);
+  const [notifPerm, setNotifPerm] = useState(false);
+
+  // Check existing permissions on mount
+  useEffect(() => {
+    // In a real app, we would check status. For web demo, we just assume false unless session stored.
+    if (Notification.permission === 'granted') setNotifPerm(true);
+  }, []);
+
   // Progress bar state for clearing data
   const [isClearing, setIsClearing] = useState(false);
   const [clearProgress, setClearProgress] = useState(0);
@@ -27,13 +38,10 @@ const Settings: React.FC = () => {
 
       const interval = setInterval(() => {
           setClearProgress(prev => {
-              if (prev >= 100) {
+              if (prev >= 95) {
                   clearInterval(interval);
-                  // 1. Clear Storage
-                  localStorage.clear();
-                  // 2. Force navigate to root (Home) hash and reload to reset all Context state to defaults
-                  window.location.hash = '/';
-                  window.location.reload();
+                  // Execute Nuke (API Delete + Local Clear)
+                  nukeUserData();
                   return 100;
               }
               return prev + 5; // increment speed
@@ -54,6 +62,16 @@ const Settings: React.FC = () => {
       }
   };
 
+  const requestHealthAccess = async () => {
+      const granted = await NativeBridge.health.requestAuthorization();
+      if (granted) setHealthPerm(true);
+  };
+
+  const requestNotifAccess = async () => {
+      const granted = await NativeBridge.notification.requestPermissions();
+      if (granted) setNotifPerm(true);
+  };
+
   return (
     <Layout>
       {/* Feedback Toast */}
@@ -71,10 +89,11 @@ const Settings: React.FC = () => {
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-danger/20 via-danger to-danger/20"></div>
                   <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
                       <span className="material-symbols-outlined text-danger">delete_forever</span>
-                      警告：清除数据
+                      警告：本地数据重置
                   </h3>
                   <p className="text-slate-400 text-sm mb-6 leading-relaxed">
-                      此操作将彻底删除所有本地存储的配置、遗嘱草稿、联系人和设备信息。数据清除后<strong className="text-white">无法恢复</strong>。
+                      此操作将彻底删除所有本地存储的配置、遗嘱、联系人、健康日志及设备绑定。App将恢复至出厂状态。<br/><br/>
+                      <span className="text-danger font-bold">云端同步：</span> 服务端关联的所有数据（UDID、倒计时配置）也将被同步销毁。
                   </p>
                   <div className="flex gap-3">
                       <button 
@@ -98,7 +117,7 @@ const Settings: React.FC = () => {
       {isClearing && (
           <div className="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md">
               <div className="w-64">
-                  <p className="text-primary font-bold text-center mb-4 uppercase tracking-widest animate-pulse">系统重置中...</p>
+                  <p className="text-primary font-bold text-center mb-4 uppercase tracking-widest animate-pulse">正在销毁云端与本地数据...</p>
                   <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden border border-white/10">
                       <div 
                         className="h-full bg-danger shadow-[0_0_10px_#ff3131]" 
@@ -116,7 +135,7 @@ const Settings: React.FC = () => {
         </div>
         <div className="flex flex-col items-center flex-1">
           <h2 className="text-lg font-bold leading-tight tracking-[0.2em] text-primary neon-glow uppercase">系统设置</h2>
-          <span className="text-[10px] text-slate-400 font-mono">配置</span>
+          <span className="text-[10px] text-slate-400 font-mono">本地配置</span>
         </div>
         <div onClick={() => navigate('/devices')} className="flex w-12 items-center justify-end cursor-pointer text-primary/40 hover:text-primary transition-colors">
           <span className="material-symbols-outlined">sensors</span>
@@ -124,10 +143,53 @@ const Settings: React.FC = () => {
       </div>
 
       <div className="p-4 space-y-4 animate-fade-in pb-10">
+        
+        {/* Permissions Section (New) */}
+        <div className="bg-medical-panel border border-primary/20 rounded p-4">
+             <div className="flex justify-between items-center mb-4">
+                <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">系统权限集成 (iOS Bridge)</h3>
+                <span className="material-symbols-outlined text-primary text-sm">security</span>
+             </div>
+             <div className="space-y-3">
+                 <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                     <div className="flex items-center gap-2">
+                         <span className="material-symbols-outlined text-slate-400">favorite</span>
+                         <div className="flex flex-col">
+                             <span className="text-sm font-bold text-white">健康数据 (HealthKit)</span>
+                             <span className="text-[10px] text-slate-500">读取步数与心率用于生存监测</span>
+                         </div>
+                     </div>
+                     <button 
+                        onClick={requestHealthAccess}
+                        disabled={healthPerm}
+                        className={`text-[10px] px-3 py-1 rounded border font-bold ${healthPerm ? 'border-primary/50 text-primary bg-primary/10' : 'border-slate-500 text-slate-400'}`}
+                     >
+                         {healthPerm ? '已授权' : '请求访问'}
+                     </button>
+                 </div>
+                 <div className="flex items-center justify-between">
+                     <div className="flex items-center gap-2">
+                         <span className="material-symbols-outlined text-slate-400">notifications_active</span>
+                         <div className="flex flex-col">
+                             <span className="text-sm font-bold text-white">本地通知 (Local Push)</span>
+                             <span className="text-[10px] text-slate-500">发送紧急生存确认请求</span>
+                         </div>
+                     </div>
+                     <button 
+                        onClick={requestNotifAccess}
+                        disabled={notifPerm}
+                        className={`text-[10px] px-3 py-1 rounded border font-bold ${notifPerm ? 'border-primary/50 text-primary bg-primary/10' : 'border-slate-500 text-slate-400'}`}
+                     >
+                         {notifPerm ? '已授权' : '请求访问'}
+                     </button>
+                 </div>
+             </div>
+        </div>
+
         {/* Device Section */}
         <div className="bg-medical-panel border border-primary/20 rounded p-4">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">已连接设备</h3>
+            <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">已连接设备 (本地)</h3>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/20 border border-primary/30">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
               <span className="text-[9px] text-primary font-bold">在线 ({devices.length})</span>
@@ -159,7 +221,7 @@ const Settings: React.FC = () => {
              <span className="material-symbols-outlined text-primary text-sm">person_alert</span>
           </div>
           <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
-             若未在倒计时结束前签到，系统将先尝试通过以下方式通知您本人。若您在确认延迟时间内未响应，系统将联系紧急联系人。
+             若未在倒计时结束前签到，系统将先尝试通过以下方式通知您本人。数据仅保存在本地，发送时通过安全网关传输。
           </p>
           <div className="space-y-3">
              <div className="relative">
@@ -216,7 +278,7 @@ const Settings: React.FC = () => {
                 <span className="material-symbols-outlined text-primary text-sm">hourglass_top</span>
             </div>
             <p className="text-[10px] text-slate-500 mb-3">
-             倒计时结束后等待您响应的时间，超时后将触发遗嘱协议。
+             倒计时结束后等待您响应的时间，超时后将触发外部通知协议。
             </p>
             <div className="grid grid-cols-4 gap-2">
                 {[30, 120, 360, 720].map((mins) => (
@@ -234,7 +296,7 @@ const Settings: React.FC = () => {
         {/* Thresholds (Removed Max HR) */}
         <div className="bg-medical-panel border border-primary/20 rounded p-4">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">运动阈值</h3>
+            <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">本地运动监测阈值</h3>
             <span className="material-symbols-outlined text-primary text-sm">directions_walk</span>
           </div>
           <div className="space-y-6 pt-2">
@@ -279,7 +341,7 @@ const Settings: React.FC = () => {
 
         {/* Sync Frequency */}
         <div className="bg-medical-panel border border-primary/20 rounded p-4">
-          <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest mb-4">自动同步频率</h3>
+          <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest mb-4">HealthKit 采集频率</h3>
           <div className="grid grid-cols-3 gap-2">
             {['15分钟', '1小时', '6小时'].map((freq) => (
                 <button 
@@ -296,7 +358,7 @@ const Settings: React.FC = () => {
         {/* Links */}
         <div className="mt-8 px-2 space-y-1">
           <button onClick={() => navigate('/logs')} className="w-full py-3 flex items-center justify-between border-b border-white/5 hover:bg-white/5 px-2 rounded transition-colors group">
-            <span className="text-sm font-medium">系统日志</span>
+            <span className="text-sm font-medium">查看本地日志</span>
             <span className="material-symbols-outlined text-slate-500 text-lg group-hover:text-primary">chevron_right</span>
           </button>
           <button onClick={() => navigate('/auth')} className="w-full py-3 flex items-center justify-between border-b border-white/5 hover:bg-white/5 px-2 rounded transition-colors group">
@@ -304,7 +366,7 @@ const Settings: React.FC = () => {
             <span className="material-symbols-outlined text-slate-500 text-lg group-hover:text-primary">chevron_right</span>
           </button>
           <button onClick={() => setShowClearModal(true)} className="w-full py-3 flex items-center justify-between border-b border-white/5 text-danger hover:bg-danger/10 px-2 rounded transition-colors group">
-            <span className="text-sm font-bold">清除本地数据 (重置)</span>
+            <span className="text-sm font-bold">擦除本地数据 (恢复出厂)</span>
             <span className="material-symbols-outlined text-danger/50 text-lg group-hover:text-danger">delete_forever</span>
           </button>
         </div>

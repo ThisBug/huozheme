@@ -1,5 +1,7 @@
 {
   "name": "活着么 (Living Well)",
   "description": "赛博朋克风格的数字遗产与生存监测应用。",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "geolocation"
+  ]
 }

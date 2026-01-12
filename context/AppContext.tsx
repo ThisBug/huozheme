@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AppSettings, Contact, LogEntry, UserStatus, WillData, Device, Notification, HealthData } from '../types';
+import { SwitchApiService } from '../services/switchApi';
+import { NativeBridge } from '../services/nativeBridge'; // Import Bridge
 
 interface AppContextType {
   settings: AppSettings;
@@ -21,10 +23,11 @@ interface AppContextType {
   removeDevice: (id: string) => void;
   syncDevice: (id: string) => void;
   addLog: (title: string, description: string, type: LogEntry['type']) => void;
-  addNotification: (title: string, description: string, category: Notification['category']) => void; // New method
+  addNotification: (title: string, description: string, category: Notification['category']) => void; 
   markAllNotificationsRead: () => void;
   markNotificationRead: (id: string) => void;
   toggleAuthorization: (isAuthorized: boolean) => void;
+  nukeUserData: () => Promise<void>; 
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -37,6 +40,8 @@ const STORAGE_KEYS = {
   LOGS: 'lw_logs',
   DEVICES: 'lw_devices',
   NOTIFICATIONS: 'lw_notifications',
+  HEALTH: 'lw_health_data',
+  SESSION: 'lw_session_checkin'
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -61,7 +66,7 @@ const INITIAL_DEVICES: Device[] = [
 
 const INITIAL_NOTIFICATIONS: Notification[] = [
     { id: '1', title: '步数计数警报', description: '步数已连续4小时低于阈值。请确认状态。', time: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), category: 'emergency', read: false },
-    { id: '2', title: '遗嘱备份完成', description: '您的数字遗嘱已采用AES-256加密并备份至去中心化存储。', time: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), category: 'system', read: false },
+    { id: '2', title: '遗嘱备份完成', description: '您的数字遗嘱已采用AES-256加密并备份至本地安全存储区。', time: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), category: 'system', read: false },
 ];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -105,10 +110,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
   });
 
-  // --- Volatile State (Real-time) ---
-  const [sessionCheckedIn, setSessionCheckedIn] = useState(false);
-  // Initial steps set to 0. It will only increase if devices are connected.
-  const [healthData, setHealthData] = useState<HealthData>({ heartRate: 0, steps: 0, lastUpdated: Date.now() });
+  const [healthData, setHealthData] = useState<HealthData>(() => {
+      const saved = localStorage.getItem(STORAGE_KEYS.HEALTH);
+      return saved ? JSON.parse(saved) : { heartRate: 0, steps: 0, lastUpdated: Date.now() };
+  });
+
+  const [sessionCheckedIn, setSessionCheckedIn] = useState<boolean>(() => {
+      const saved = localStorage.getItem(STORAGE_KEYS.SESSION);
+      return saved ? JSON.parse(saved) : false;
+  });
 
   // --- Persistence Effects ---
   useEffect(() => localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings)), [settings]);
@@ -118,59 +128,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logs)), [logs]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.DEVICES, JSON.stringify(devices)), [devices]);
   useEffect(() => localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications)), [notifications]);
+  useEffect(() => localStorage.setItem(STORAGE_KEYS.HEALTH, JSON.stringify(healthData)), [healthData]);
+  useEffect(() => localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(sessionCheckedIn)), [sessionCheckedIn]);
 
-  // --- Device Simulation Logic ---
+  // --- SERVER SYNC LOGIC ---
+  useEffect(() => {
+    const syncToCloud = async () => {
+        if (status.isAuthorized) {
+            await SwitchApiService.syncConfig(settings, contacts, true);
+        }
+    };
+    const timer = setTimeout(syncToCloud, 2000); 
+    return () => clearTimeout(timer);
+  }, [settings, contacts, status.isAuthorized]);
+
+  // --- NATIVE BRIDGE INTEGRATION (HealthKit & Background Logic) ---
   useEffect(() => {
     const hasWatch = devices.some(d => d.type === 'watch' && d.status === 'connected');
     const hasPhone = devices.some(d => d.type === 'phone' && d.status === 'connected');
+    
+    if (!hasWatch && !hasPhone) return;
 
-    // If NO devices are connected, reset data to 0 and STOP simulation.
-    if (!hasWatch && !hasPhone) {
-        setHealthData({ heartRate: 0, steps: 0, lastUpdated: Date.now() });
-        return; 
-    }
-
-    // Only start interval if at least one device is connected
-    const interval = setInterval(() => {
-        setHealthData(prev => {
-            let newHeartRate = prev.heartRate;
-            let newSteps = prev.steps;
-
-            // Simulate Heart Rate (only if Watch present)
-            if (hasWatch) {
-                // Random fluctuation between 65 and 95
-                const noise = Math.floor(Math.random() * 5) - 2; // -2 to +2
-                let nextHr = (newHeartRate === 0 ? 75 : newHeartRate) + noise;
-                if (nextHr > 100) nextHr = 98;
-                if (nextHr < 60) nextHr = 62;
-                newHeartRate = nextHr;
-            } else {
-                newHeartRate = 0;
+    // 1. Polling Function (Simulating HKObserverQuery updates)
+    const fetchHealthData = async () => {
+        try {
+            const data = await NativeBridge.health.queryStatus();
+            setHealthData(data);
+            
+            // Auto Check-In Logic
+            if (data.steps > settings.minSteps && !sessionCheckedIn) {
+                // In native app, this would happen in background task
+                // For now, we update it in state
+                // Note: We don't call performCheckIn() directly to avoid infinite loops in this effect
             }
+        } catch (e) {
+            console.error("HealthKit query failed", e);
+        }
+    };
 
-            // Simulate Steps (if Watch or Phone present)
-            if (hasWatch || hasPhone) {
-                // Initialize steps if it was 0
-                if (newSteps === 0) newSteps = 1240; 
-                
-                // Add 0-2 steps occasionally
-                if (Math.random() > 0.7) {
-                    newSteps += Math.floor(Math.random() * 2) + 1;
-                }
-            } else {
-                newSteps = 0;
-            }
+    // 2. Initial Fetch
+    fetchHealthData();
 
-            return {
-                heartRate: newHeartRate,
-                steps: newSteps,
-                lastUpdated: Date.now()
-            };
-        });
-    }, 1500); // Update every 1.5 seconds
+    // 3. Periodic Polling (Foreground)
+    const interval = setInterval(fetchHealthData, 3000); // Poll every 3s in foreground
+
+    // 4. Resume Listener (Simulate Background Fetch completion)
+    // When user comes back to app, immediately sync
+    NativeBridge.app.onResume(() => {
+        console.log("App resumed - triggering immediate health sync");
+        fetchHealthData();
+        // Here we could also check if 'Background App Refresh' updated data while we were away
+    });
 
     return () => clearInterval(interval);
-  }, [devices]);
+  }, [devices, settings.minSteps, sessionCheckedIn]);
 
 
   // --- Actions ---
@@ -195,6 +206,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       read: false
     };
     setNotifications(prev => [newNotif, ...prev]);
+
+    // TRIGGER LOCAL PUSH (Native Bridge)
+    // If it's an emergency, try to push to system notification center
+    if (category === 'emergency') {
+        NativeBridge.notification.scheduleLocal(newNotif.id, `🚨 ${title}`, description, 1);
+    }
   };
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {
@@ -202,10 +219,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const performCheckIn = () => {
-    setStatus(prev => ({ ...prev, lastCheckIn: Date.now(), status: 'active' }));
+    const now = Date.now();
+    setStatus(prev => ({ ...prev, lastCheckIn: now, status: 'active' }));
     setSessionCheckedIn(true);
     addLog('手动签到成功', '用户通过生物识别验证确认了生存状态', 'success');
     addNotification('签到成功', '生命周期计时器已重置。', 'system');
+
+    if (status.isAuthorized) {
+        const nextDeadline = now + (settings.checkInInterval * 60 * 60 * 1000);
+        SwitchApiService.sendHeartbeat(nextDeadline, settings.confirmationDelay);
+        addLog('云端同步', '已更新服务端死手开关倒计时', 'config');
+    }
   };
 
   const updateWill = (content: string, isSigned: boolean) => {
@@ -216,7 +240,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: prev.id || 'LW-' + Date.now().toString().slice(-6)
     }));
     if (isSigned) {
-        addLog('遗嘱签署', '数字遗嘱已完成签署并归档', 'update');
+        addLog('遗嘱签署', '数字遗嘱已完成签署并归档至本地', 'update');
         addNotification('遗嘱已更新', '您的数字遗嘱已成功加密保存。', 'system');
     }
   };
@@ -247,14 +271,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const removeDevice = (id: string) => {
-      // 1. Log immediately based on current state to avoid closure issues
       const target = devices.find(d => d.id === id);
       if (target) {
          addLog('设备解绑', `解除了设备绑定: ${target.name}`, 'alert');
          addNotification('设备已断开', `${target.name} 已解除绑定。`, 'system');
       }
-      
-      // 2. Update State
       setDevices(prev => prev.filter(d => d.id !== id));
   };
 
@@ -274,11 +295,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setStatus(prev => ({ ...prev, isAuthorized }));
       if (isAuthorized) {
           addLog('协议授权', '用户签署了遗产执行协议', 'success');
-          addNotification('协议生效', '遗产执行协议已签署并生效。', 'system');
+          addNotification('协议生效', '遗产执行协议已签署并生效。服务端死手开关已激活。', 'system');
+          SwitchApiService.syncConfig(settings, contacts, true);
       } else {
           addLog('撤销授权', '用户撤销了遗产执行协议', 'alert');
-          addNotification('协议撤销', '您已撤销遗产执行协议。', 'emergency');
+          addNotification('协议撤销', '您已撤销遗产执行协议。服务端配置已暂停。', 'emergency');
+          SwitchApiService.syncConfig(settings, contacts, false);
       }
+  };
+
+  const nukeUserData = async () => {
+      await SwitchApiService.deleteAccount();
+      localStorage.clear();
+      window.location.hash = '/';
+      window.location.reload();
   };
 
   return (
@@ -290,7 +320,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       logs,
       devices,
       notifications,
-      healthData, // Exposed for UI
+      healthData,
       sessionCheckedIn,
       updateSettings,
       performCheckIn,
@@ -305,7 +335,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addNotification,
       markAllNotificationsRead,
       markNotificationRead,
-      toggleAuthorization
+      toggleAuthorization,
+      nukeUserData
     }}>
       {children}
     </AppContext.Provider>
