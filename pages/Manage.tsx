@@ -123,7 +123,7 @@ const Manage: React.FC = () => {
             onClick={() => setActiveTab('will')}
             className={`flex-1 py-2 text-sm font-bold rounded transition-all ${activeTab === 'will' ? 'bg-primary/20 text-primary border border-primary/40 shadow-[0_0_10px_rgba(57,255,20,0.1)]' : 'text-slate-500 hover:text-slate-300'}`}
           >
-            我的遗嘱
+            备忘录
           </button>
           <button 
             onClick={() => setActiveTab('contacts')}
@@ -140,12 +140,12 @@ const Manage: React.FC = () => {
                 <div className="flex justify-between items-start">
                   <div className="flex flex-col">
                     <span className="text-[10px] font-mono text-primary/70 tracking-widest uppercase">归档编号: {will.id || 'PENDING'}</span>
-                    <h3 className="text-xl font-bold text-white mt-1">最后遗愿与遗嘱</h3>
+                    <h3 className="text-xl font-bold text-white mt-1">遗产与资产备忘录</h3>
                   </div>
                   {will.isSigned ? (
                     <div className="flex items-center gap-1 bg-primary/10 px-2 py-0.5 border border-primary/30 rounded">
-                        <span className="material-symbols-outlined text-[14px] text-primary">verified_user</span>
-                        <span className="text-[10px] font-bold text-primary">已签署</span>
+                        <span className="material-symbols-outlined text-[14px] text-primary">lock</span>
+                        <span className="text-[10px] font-bold text-primary">加密保存</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1 bg-slate-800 px-2 py-0.5 border border-white/10 rounded">
@@ -170,33 +170,33 @@ const Manage: React.FC = () => {
                     className="flex items-center gap-2 bg-primary px-4 py-2 rounded text-black font-bold text-sm hover:opacity-90 active:scale-95 transition-all shadow-[0_0_10px_rgba(57,255,20,0.3)]"
                   >
                     <span className="material-symbols-outlined text-sm">edit_note</span>
-                    编辑遗嘱
+                    编辑信息
                   </button>
                 </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 px-4 border-2 border-dashed border-white/10 rounded-xl bg-white/5">
                   <div className="size-20 rounded-full bg-medical-dark border border-white/10 flex items-center justify-center mb-6 shadow-inner">
-                      <span className="material-symbols-outlined text-4xl text-slate-600">history_edu</span>
+                      <span className="material-symbols-outlined text-4xl text-slate-600">assignment</span>
                   </div>
-                  <p className="text-slate-300 text-base font-bold mb-2">暂无遗嘱档案</p>
+                  <p className="text-slate-300 text-base font-bold mb-2">暂无遗产备忘录</p>
                   <p className="text-slate-500 text-xs text-center mb-8 max-w-[240px] leading-relaxed">
-                      您尚未创建数字遗嘱。
+                      在中国地区，电子遗嘱可能无效。
                       <br/>
-                      创建一份以确保您的数字资产、社交账号及隐私数据得到妥善处理。
+                      请在此记录您的<span className="text-primary">实物遗嘱存放地点</span>、<span className="text-primary">保险单据</span>及<span className="text-primary">数字资产密钥</span>，以便紧急情况下发送给联系人。
                   </p>
                   <button 
                       onClick={() => navigate('/editor')}
                       className="flex items-center gap-2 bg-primary px-8 py-3 rounded-lg text-black font-black text-sm uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all shadow-[0_0_20px_rgba(57,255,20,0.3)] group"
                   >
                       <span className="material-symbols-outlined text-xl group-hover:rotate-12 transition-transform">add_circle</span>
-                      创建新遗嘱
+                      创建资产线索
                   </button>
               </div>
             )}
 
              <div className="flex justify-between items-center mt-4 px-1">
-                 <button onClick={() => navigate('/auth')} className="text-xs text-primary/70 hover:text-primary underline font-mono cursor-pointer">查看法律授权协议</button>
+                 <button onClick={() => navigate('/auth')} className="text-xs text-primary/70 hover:text-primary underline font-mono cursor-pointer">查看备忘录执行协议</button>
              </div>
           </div>
         ) : (

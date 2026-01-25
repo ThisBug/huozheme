@@ -7,6 +7,8 @@ export interface Contact {
   status: 'verified' | 'pending';
   priority: boolean;
   avatarColor?: string;
+  // 新增联系人通知偏好类型 (服务端逻辑需要)
+  notificationType?: 'email' | 'sms' | 'both'; 
 }
 
 export interface LogEntry {
@@ -47,17 +49,23 @@ export interface WillData {
 export interface AppSettings {
   checkInInterval: number; // Hours
   minSteps: number;
-  syncFrequency: string;
   // New fields
   confirmationDelay: number; // Minutes
   userPhone: string;
   userEmail: string;
+  userName: string; // 用户称呼/代号
 }
 
 export interface UserStatus {
   lastCheckIn: number; // Timestamp
-  status: 'active' | 'warning' | 'critical';
+  // 对应服务端的：监测中(active), 预警中(warning), 已失联(missing), 已封禁(banned), 已销毁(destroyed)
+  status: 'active' | 'warning' | 'missing' | 'banned' | 'destroyed';
   isAuthorized: boolean; // Legal authorization signed
+  // New fields for advanced check-in logic
+  stepsCheckInDone: boolean;
+  lastManualCheckIn: number;
+  lastHeartRateCheckIn: number;
+  preWarningSent: boolean; // Tracks if the 30-min pre-warning has been sent
 }
 
 // New Interface for Real-time Data

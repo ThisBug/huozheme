@@ -6,10 +6,18 @@ import { NativeBridge } from '../services/nativeBridge';
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
-  const { settings, updateSettings, devices, nukeUserData } = useApp();
+  const { settings, updateSettings, devices, nukeUserData, status } = useApp();
+  
+  // Local state for user info fields to save on blur
+  const [localUserName, setLocalUserName] = useState(settings.userName);
+  const [localUserPhone, setLocalUserPhone] = useState(settings.userPhone);
+  const [localUserEmail, setLocalUserEmail] = useState(settings.userEmail);
+  
   const [showToast, setShowToast] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
+  const [nameError, setNameError] = useState(false);
   const [phoneError, setPhoneError] = useState(false);
+  const [emailError, setEmailError] = useState(false);
   
   // Permissions State
   const [healthPerm, setHealthPerm] = useState(false);
@@ -25,10 +33,57 @@ const Settings: React.FC = () => {
   const [isClearing, setIsClearing] = useState(false);
   const [clearProgress, setClearProgress] = useState(0);
 
-  const handleUpdate = (newSettings: any) => {
+  const validatePhone = (phone: string) => {
+      return /^1\d{10}$/.test(phone);
+  };
+
+  const validateEmail = (email: string) => {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+  
+  // Derived state for button enablement
+  const canActivate = 
+    localUserName.trim() !== '' &&
+    localUserName.length <= 20 &&
+    localUserEmail.trim() !== '' &&
+    validateEmail(localUserEmail) &&
+    (!localUserPhone.trim() || validatePhone(localUserPhone));
+
+  // Generic handler for settings that save immediately (buttons, sliders)
+  const handleImmediateUpdate = (newSettings: Partial<typeof settings>) => {
       updateSettings(newSettings);
       setShowToast(true);
       setTimeout(() => setShowToast(false), 2000);
+  };
+
+  // Save user info on blur
+  const handleInfoSaveOnBlur = () => {
+    const isNameInvalid = localUserName.length > 20;
+    const isPhoneInvalid = !!localUserPhone && !validatePhone(localUserPhone);
+    const isEmailInvalid = !!localUserEmail && !validateEmail(localUserEmail);
+
+    setNameError(isNameInvalid);
+    setPhoneError(isPhoneInvalid);
+    setEmailError(isEmailInvalid);
+    
+    if (isNameInvalid || isPhoneInvalid || isEmailInvalid) {
+        return;
+    }
+    
+    // Check if anything actually changed to avoid unnecessary saves
+    if (
+      localUserName !== settings.userName ||
+      localUserPhone !== settings.userPhone ||
+      localUserEmail !== settings.userEmail
+    ) {
+      updateSettings({
+        userName: localUserName,
+        userPhone: localUserPhone,
+        userEmail: localUserEmail,
+      });
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    }
   };
 
   const handleClearData = () => {
@@ -47,19 +102,6 @@ const Settings: React.FC = () => {
               return prev + 5; // increment speed
           });
       }, 50);
-  };
-
-  const validatePhone = (phone: string) => {
-      // Strict 11-digit mobile number starting with 1
-      return /^1\d{10}$/.test(phone);
-  };
-
-  const handlePhoneBlur = () => {
-      if (settings.userPhone && !validatePhone(settings.userPhone)) {
-          setPhoneError(true);
-      } else {
-          setPhoneError(false);
-      }
   };
 
   const requestHealthAccess = async () => {
@@ -217,38 +259,73 @@ const Settings: React.FC = () => {
         {/* User Contact Info for Self-Notification */}
         <div className="bg-medical-panel border border-primary/20 rounded p-4">
           <div className="flex items-center gap-2 mb-4">
-             <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">本人接收通知</h3>
+             <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest">个人信息 & 本人通知</h3>
              <span className="material-symbols-outlined text-primary text-sm">person_alert</span>
           </div>
           <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
-             若未在倒计时结束前签到，系统将先尝试通过以下方式通知您本人。数据仅保存在本地，发送时通过安全网关传输。
+             设置您的称呼以便联系人识别，以及本人接收预警的联系方式。
           </p>
           <div className="space-y-3">
+             <div className="relative">
+                <span className={`absolute left-3 top-3 material-symbols-outlined text-[16px] ${nameError ? 'text-danger' : 'text-slate-500'}`}>badge</span>
+                <input 
+                    type="text" 
+                    placeholder="您的称呼 / 代号 (必填) *"
+                    value={localUserName}
+                    onChange={(e) => setLocalUserName(e.target.value)}
+                    onBlur={handleInfoSaveOnBlur}
+                    className={`w-full bg-white/5 border ${nameError ? 'border-danger' : 'border-white/10'} rounded px-3 py-2 pl-9 text-xs text-white placeholder:text-slate-600 focus:border-primary focus:ring-0 transition-colors font-mono`}
+                />
+                {nameError && <p className="text-[10px] text-danger mt-1 ml-1">称呼不能超过20个字符</p>}
+             </div>
+             <div className="relative">
+                <span className={`absolute left-3 top-3 material-symbols-outlined text-[16px] ${emailError ? 'text-danger' : 'text-slate-500'}`}>email</span>
+                <input 
+                    type="email" 
+                    placeholder="本人邮箱 (激活服务必填项) *"
+                    value={localUserEmail}
+                    onChange={(e) => {
+                        setLocalUserEmail(e.target.value);
+                        if(emailError) setEmailError(false);
+                    }}
+                    onBlur={handleInfoSaveOnBlur}
+                    className={`w-full bg-white/5 border ${emailError ? 'border-danger' : 'border-white/10'} rounded px-3 py-2 pl-9 text-xs text-white placeholder:text-slate-600 focus:border-primary focus:ring-0 transition-colors font-mono`}
+                />
+                 {emailError && <p className="text-[10px] text-danger mt-1 ml-1">邮箱格式不正确</p>}
+             </div>
              <div className="relative">
                 <span className={`absolute left-3 top-3 material-symbols-outlined text-[16px] ${phoneError ? 'text-danger' : 'text-slate-500'}`}>phone_iphone</span>
                 <input 
                     type="tel" 
                     placeholder="本人手机号 (可选)"
-                    value={settings.userPhone}
-                    onBlur={handlePhoneBlur}
+                    value={localUserPhone}
+                    onBlur={handleInfoSaveOnBlur}
                     onChange={(e) => {
-                        handleUpdate({ userPhone: e.target.value });
+                        setLocalUserPhone(e.target.value);
                         if(phoneError) setPhoneError(false);
                     }}
                     className={`w-full bg-white/5 border ${phoneError ? 'border-danger' : 'border-white/10'} rounded px-3 py-2 pl-9 text-xs text-white placeholder:text-slate-600 focus:border-primary focus:ring-0 transition-colors font-mono`}
                 />
                 {phoneError && <p className="text-[10px] text-danger mt-1 ml-1">格式错误：仅支持11位手机号（以1开头）</p>}
              </div>
-             <div className="relative">
-                <span className="absolute left-3 top-3 text-slate-500 material-symbols-outlined text-[16px]">email</span>
-                <input 
-                    type="email" 
-                    placeholder="本人邮箱 (可选)"
-                    value={settings.userEmail}
-                    onChange={(e) => handleUpdate({ userEmail: e.target.value })}
-                    className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 pl-9 text-xs text-white placeholder:text-slate-600 focus:border-primary focus:ring-0 transition-colors font-mono"
-                />
-             </div>
+          </div>
+          
+          {/* Activation Button / Status */}
+          <div className="mt-4">
+            {status.isAuthorized ? (
+                <div className="bg-primary/10 border border-primary/20 p-3 flex items-center justify-center gap-2 rounded-lg">
+                    <span className="material-symbols-outlined text-primary text-base">verified_user</span>
+                    <span className="text-primary text-xs font-bold">已激活预警服务</span>
+                </div>
+            ) : (
+                <button
+                    onClick={() => navigate('/auth')}
+                    disabled={!canActivate}
+                    className="w-full bg-primary text-black font-bold py-3 rounded-lg flex items-center justify-center gap-2 uppercase tracking-widest shadow-[0_0_15px_rgba(57,255,20,0.3)] hover:brightness-110 active:scale-95 transition-all disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                    激活预警
+                </button>
+            )}
           </div>
         </div>
 
@@ -262,7 +339,7 @@ const Settings: React.FC = () => {
             {[12, 24, 48, 72].map((hours) => (
               <button 
                 key={hours}
-                onClick={() => handleUpdate({ checkInInterval: hours })}
+                onClick={() => handleImmediateUpdate({ checkInInterval: hours })}
                 className={`p-2 border ${settings.checkInInterval === hours ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
               >
                 {hours}小时
@@ -281,10 +358,10 @@ const Settings: React.FC = () => {
              倒计时结束后等待您响应的时间，超时后将触发外部通知协议。
             </p>
             <div className="grid grid-cols-4 gap-2">
-                {[30, 120, 360, 720].map((mins) => (
+                {[120, 360, 720, 1440].map((mins) => (
                 <button 
                     key={mins}
-                    onClick={() => handleUpdate({ confirmationDelay: mins })}
+                    onClick={() => handleImmediateUpdate({ confirmationDelay: mins })}
                     className={`p-2 border ${settings.confirmationDelay === mins ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
                 >
                     {mins < 60 ? `${mins}分钟` : `${mins/60}小时`}
@@ -313,7 +390,7 @@ const Settings: React.FC = () => {
                     max="10000" 
                     step="500" 
                     value={settings.minSteps}
-                    onChange={(e) => handleUpdate({ minSteps: parseInt(e.target.value) })}
+                    onChange={(e) => handleImmediateUpdate({ minSteps: parseInt(e.target.value) })}
                     className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-primary"
                   />
                   <style>{`
@@ -336,22 +413,6 @@ const Settings: React.FC = () => {
                   `}</style>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Sync Frequency */}
-        <div className="bg-medical-panel border border-primary/20 rounded p-4">
-          <h3 className="text-primary text-[10px] font-mono font-bold uppercase tracking-widest mb-4">HealthKit 采集频率</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {['15分钟', '1小时', '6小时'].map((freq) => (
-                <button 
-                    key={freq}
-                    onClick={() => handleUpdate({ syncFrequency: freq })}
-                    className={`p-2 border ${settings.syncFrequency === freq ? 'border-primary/40 bg-primary/10 text-primary shadow-[0_0_5px_rgba(57,255,20,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'} text-[10px] font-mono text-center rounded font-bold transition-all`}
-                >
-                    {freq}
-                </button>
-            ))}
           </div>
         </div>
 

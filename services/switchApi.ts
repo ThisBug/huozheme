@@ -1,215 +1,208 @@
-import { AppSettings, Contact } from '../types';
+import { AppSettings, Contact, WillData } from '../types';
 
 /**
  * SwitchApiService (Client SDK)
  * 
- * 对应服务端 API 接口的客户端实现。
- * 
- * --- 后端接口规范 (Spec) ---
- * 
- * 鉴权:
- * 所有请求必须包含 Header: `X-Device-UDID: <UUID>`
- * 
- * 1. POST /api/v1/switch/heartbeat
- *    Body: { nextDeadline: number (timestamp), gracePeriod: number (minutes) }
- *    Response: { status: 'active', serverTime: number }
- * 
- * 2. PUT /api/v1/switch/config
- *    Body: { isEnabled: boolean, ownerNotification: { email, phone }, emergencyContacts: [{ name, target, type }] }
- *    Response: { updatedAt: number }
- * 
- * 3. DELETE /api/v1/switch/account
- *    Response: { status: 'deleted' }
- * 
- * 4. GET /api/v1/switch/status
- *    Response: { state: 'monitoring' | 'warning' | 'triggered', deadline: number }
+ * Implements the "light-networking, heavy-local" strategy:
+ * 1. API call failures do not throw exceptions to crash the app, returning null/false instead.
+ * 2. Heartbeats are only sent after the client confirms liveness.
  */
 
+const API_BASE_URL = 'https://hzm.thisbug.com/api/v1/switch';
 const STORAGE_UDID_KEY = 'lw_device_udid';
+const STORAGE_TOKEN_KEY = 'lw_api_token';
 
-// 模拟后端数据库结构
-interface MockServerRecord {
-    udid: string;
-    deadline: number;
-    gracePeriod: number; // minutes
-    status: 'monitoring' | 'warning' | 'triggered';
-    config: {
-        isEnabled: boolean;
-        ownerNotification: { email: string; phone: string };
-        emergencyContacts: Array<{ name: string; target: string; type: string }>;
+let apiToken: string | null = localStorage.getItem(STORAGE_TOKEN_KEY);
+
+// --- Private Helper Functions ---
+
+/**
+ * Gets or generates a unique device identifier (UDID).
+ * This ID is the user's unique credential on the server.
+ */
+const getUDID = (): string => {
+    let udid = localStorage.getItem(STORAGE_UDID_KEY);
+    if (!udid) {
+        udid = crypto.randomUUID();
+        localStorage.setItem(STORAGE_UDID_KEY, udid);
+    }
+    return udid;
+};
+
+/**
+ * Fetches a new JWT from the server.
+ * This is called on initialization or when the current token expires.
+ */
+const fetchNewToken = async (): Promise<string | null> => {
+    console.log('[☁️ Auth] Requesting new token...');
+    const udid = getUDID();
+    const ua = navigator.userAgent;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/token`, {
+            method: 'GET',
+            headers: {
+                'X-Device-UUID': udid,
+                'User-Agent': ua,
+            },
+        });
+        const data = await response.json();
+        if (data.code === 200 && data.data.token) {
+            console.log('[☁️ Auth] Token acquired.');
+            apiToken = data.data.token;
+            localStorage.setItem(STORAGE_TOKEN_KEY, apiToken!);
+            return apiToken;
+        }
+        console.error('[☁️ Auth] Token request failed:', data.msg || 'Unknown error');
+        return null;
+    } catch (error) {
+        console.error('[☁️ Auth] Network error fetching token:', error);
+        return null;
+    }
+};
+
+/**
+ * Centralized API request handler with automatic token refresh.
+ */
+const apiRequest = async (endpoint: string, options: RequestInit): Promise<any | null> => {
+    if (!apiToken) {
+        apiToken = await fetchNewToken();
+        if (!apiToken) return null; // Can't proceed without a token
+    }
+
+    const udid = getUDID();
+    const defaultHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`,
+        'X-Device-UUID': udid,
     };
-    lastHeartbeat: number;
-}
 
-// 内存中的模拟数据库 (刷新页面会重置，实际应为 fetch 请求)
-const MOCK_SERVER_DB: Record<string, MockServerRecord> = {};
+    const config = {
+        ...options,
+        headers: {
+            ...defaultHeaders,
+            ...options.headers,
+        },
+    };
+
+    try {
+        let response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+
+        // Handle token expiration (HTTP 401)
+        if (response.status === 401) {
+            console.log('[☁️ Auth] Token expired. Refreshing...');
+            apiToken = await fetchNewToken();
+            if (!apiToken) return null; // Failed to refresh
+
+            // Retry the request with the new token
+            config.headers['Authorization'] = `Bearer ${apiToken}`;
+            response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+        }
+
+        if (!response.ok) {
+            console.error(`[☁️ API] Error on ${endpoint}: ${response.status} ${response.statusText}`);
+            return null;
+        }
+        
+        return await response.json();
+
+    } catch (error) {
+        console.error(`[☁️ API] Network error on ${endpoint}:`, error);
+        return null;
+    }
+};
+
+// --- Public API ---
 
 export const SwitchApiService = {
     /**
-     * 获取或生成唯一设备标识 (UDID)
-     * 该 ID 是用户在服务端的唯一凭证。
+     * Initializes the service by fetching an API token if one isn't already stored.
+     * This should be called when the application loads.
      */
-    getUDID: (): string => {
-        let udid = localStorage.getItem(STORAGE_UDID_KEY);
-        if (!udid) {
-            udid = crypto.randomUUID();
-            localStorage.setItem(STORAGE_UDID_KEY, udid);
+    init: async (): Promise<void> => {
+        if (!apiToken) {
+            await fetchNewToken(); // Fetches and stores the token internally
         }
-        return udid;
     },
 
     /**
-     * 1. 发送心跳 (Heartbeat)
-     * 
-     * 作用: 告诉服务端 "我还活着"，并将倒计时推迟到 nextDeadline。
-     * 触发: 客户端根据本地规则（步数、生物验证）自动触发。
+     * Sends a heartbeat to the server to reset the dead man's switch timer.
+     * @param deadline - The new deadline as a Unix timestamp (seconds).
      */
-    sendHeartbeat: async (nextDeadline: number, gracePeriodMinutes: number) => {
-        const udid = SwitchApiService.getUDID();
-        console.log(`[☁️ API] POST /heartbeat | UDID: ...${udid.slice(-6)} | Deadline: ${new Date(nextDeadline).toLocaleString()}`);
-        
-        // --- 模拟网络请求 ---
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                const prevRecord = MOCK_SERVER_DB[udid];
-                
-                // 更新记录
-                MOCK_SERVER_DB[udid] = {
-                    ...(prevRecord || {}),
-                    udid,
-                    deadline: nextDeadline,
-                    gracePeriod: gracePeriodMinutes,
-                    status: 'monitoring', // 心跳总是重置状态为监测中
-                    lastHeartbeat: Date.now(),
-                    // 保留原有配置，如果没有则初始化空配置
-                    config: prevRecord?.config || { isEnabled: false, ownerNotification: {email:'', phone:''}, emergencyContacts: [] }
-                };
-
-                resolve({ status: 'active', serverTime: Date.now() });
-            }, 500); // 模拟 500ms 延迟
+    sendHeartbeat: async (deadline: number): Promise<boolean> => {
+        console.log(`[☁️ Heartbeat] Sending... New Deadline: ${new Date(deadline * 1000).toLocaleString()}`);
+        const response = await apiRequest('/heartbeat', {
+            method: 'POST',
+            body: JSON.stringify({ deadline }),
         });
+        return response?.code === 200;
     },
 
     /**
-     * 2. 同步配置 (Sync Config)
-     * 
-     * 作用: 更新服务端在触发死手开关时需要通知的联系人列表。
-     * 注意: 此处**不上传**任何遗嘱内容，仅上传联系方式。
+     * Syncs the user's local configuration with the server.
+     * This includes settings, contacts, and the will content.
      */
-    syncConfig: async (settings: AppSettings, contacts: Contact[], isEnabled: boolean) => {
-        const udid = SwitchApiService.getUDID();
-        
-        // 数据脱敏与格式化
-        const emergencyContacts = contacts.map(c => ({
-            name: c.name,
-            target: c.email, // 仅使用邮箱作为通知渠道
-            type: 'email'
-        })).filter(c => c.target && c.target.includes('@')); // 简单验证
-
+    syncConfig: async (settings: AppSettings, contacts: Contact[], will: WillData): Promise<boolean> => {
+        console.log('[☁️ Sync] Syncing user configuration to server...');
         const payload = {
-            isEnabled,
-            ownerNotification: {
-                email: settings.userEmail,
-                phone: settings.userPhone
+            settings: {
+                check_in_interval_hours: settings.checkInInterval,
+                confirmation_delay_minutes: settings.confirmationDelay,
             },
-            emergencyContacts
+            contacts: contacts.map(c => ({
+                name: c.name,
+                phone: c.phone,
+                email: c.email,
+                role: c.role === '紧急联系人' ? 'emergency' : 'asset_liaison',
+            })),
+            will_content: will.isSigned ? will.content : '', // Only sync signed wills
+            meta: {
+                user_name: settings.userName,
+                user_email: settings.userEmail,
+                user_phone: settings.userPhone
+            }
         };
-
-        console.log(`[☁️ API] PUT /config | UDID: ...${udid.slice(-6)}`, payload);
-
-        // --- 模拟网络请求 ---
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                const prevRecord = MOCK_SERVER_DB[udid];
-                if (prevRecord) {
-                    prevRecord.config = payload;
-                } else {
-                    // 如果先调用 syncConfig 而没有 heartbeat (不太可能)，初始化一条
-                    MOCK_SERVER_DB[udid] = {
-                        udid,
-                        deadline: Date.now() + 86400000, // 默认 24h
-                        gracePeriod: 60,
-                        status: 'monitoring',
-                        lastHeartbeat: Date.now(),
-                        config: payload
-                    };
-                }
-                resolve({ updatedAt: Date.now() });
-            }, 800);
+        
+        const response = await apiRequest('/config', {
+            method: 'POST',
+            body: JSON.stringify(payload),
         });
+        
+        return response?.code === 200;
+    },
+    
+    /**
+     * Retrieves the server-side status for the current user.
+     * Useful for checking if the account is banned or in another state.
+     */
+    getServerStatus: async (): Promise<{ code: number; data: any } | null> => {
+        console.log('[☁️ Status] Fetching server status...');
+        const response = await apiRequest('/status', {
+            method: 'GET',
+        });
+        return response;
     },
 
     /**
-     * 3. 账户销毁 (Nuke)
-     * 
-     * 作用: 物理删除服务端所有关联数据。
+     * Requests the server to send a pre-warning notification to the user themselves.
      */
-    deleteAccount: async () => {
-        const udid = SwitchApiService.getUDID();
-        console.log(`[☁️ API] DELETE /account | UDID: ...${udid.slice(-6)}`);
-
-        // --- 模拟网络请求 ---
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                if (MOCK_SERVER_DB[udid]) {
-                    delete MOCK_SERVER_DB[udid];
-                }
-                // 清除本地存储的 ID，彻底断开关联
-                localStorage.removeItem(STORAGE_UDID_KEY);
-                resolve({ status: 'deleted' });
-            }, 600);
+    sendSelfNotification: async (): Promise<boolean> => {
+        console.log('[☁️ Notify] Requesting server to send self pre-warning notification...');
+        const response = await apiRequest('/notify-self', {
+            method: 'POST',
         });
+        return response?.code === 200;
     },
 
     /**
-     * 4. 获取状态 (Get Status)
-     * 
-     * 作用: 供前端 UI 检查云端视角的状态。
+     * Deletes all user data from the server.
+     * This is an irreversible action.
      */
-    getServerStatus: async () => {
-        const udid = SwitchApiService.getUDID();
-        // --- 模拟网络请求 ---
-        return new Promise<{state: string, deadline: number} | null>((resolve) => {
-            setTimeout(() => {
-                const record = MOCK_SERVER_DB[udid];
-                if (!record) {
-                    resolve(null);
-                    return;
-                }
-                resolve({
-                    state: record.status,
-                    deadline: record.deadline
-                });
-            }, 300);
+    deleteAccount: async (): Promise<boolean> => {
+        console.warn('[☁️ Delete] Initiating server data deletion...');
+        const response = await apiRequest('/delete', {
+            method: 'DELETE',
         });
+        return response?.code === 200;
     },
-
-    /**
-     * [Debug Only] 模拟服务端后台 Worker 逻辑
-     * 
-     * 在真实架构中，这是运行在服务器上的 Cron Job 或 Daemon 进程。
-     * 为了演示，我们在这里暴露一个方法来模拟时间流逝导致的状态变更。
-     */
-    _simulateServerWorkerTick: () => {
-        const udid = SwitchApiService.getUDID();
-        const record = MOCK_SERVER_DB[udid];
-        if (!record || !record.config.isEnabled) return;
-
-        const now = Date.now();
-        const warningTime = record.deadline;
-        const triggerTime = record.deadline + (record.gracePeriod * 60 * 1000);
-
-        // 状态机流转
-        if (record.status === 'monitoring' && now > warningTime) {
-            console.log(`%c[☁️ Server Worker] 状态变更为 WARNING! 发送预警邮件给: ${record.config.ownerNotification.email}`, 'color: orange');
-            record.status = 'warning';
-        } else if (record.status === 'warning' && now > triggerTime) {
-            console.log(`%c[☁️ Server Worker] 状态变更为 TRIGGERED! 死手开关启动!`, 'color: red; font-size: 14px');
-            console.log(`%c[☁️ Server Worker] 向 ${record.config.emergencyContacts.length} 位联系人发送通知...`, 'color: red');
-            record.config.emergencyContacts.forEach(c => {
-                console.log(`   -> Email to ${c.name} (${c.target}): "用户已失联，请检查其手机遗嘱。"`);
-            });
-            record.status = 'triggered';
-        }
-    }
 };

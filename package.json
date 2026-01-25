@@ -17,14 +17,14 @@
     "@capacitor/local-notifications": "^5.0.0",
     "@capacitor/preferences": "^5.0.0",
     "@perfood/capacitor-healthkit": "^0.0.12",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.22.0"
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-router-dom": "^6.23.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^5.0.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.0",
     "postcss": "^8.4.0",

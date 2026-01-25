@@ -3,12 +3,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useApp } from '../context/AppContext';
 import { Contact } from '../types';
-import { CommunicationService } from '../services/communication';
 
 const AddContact: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { addContact, updateContact, contacts, addNotification } = useApp();
+  const { status, addContact, updateContact, contacts, addNotification, settings, updateSettings } = useApp();
   
   const editId = searchParams.get('id');
   const isEditing = !!editId;
@@ -22,6 +21,19 @@ const AddContact: React.FC = () => {
   // Custom Error Modal State
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Identity Check Modal State
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [tempUserName, setTempUserName] = useState('');
+  const [tempUserPhone, setTempUserPhone] = useState('');
+  const [tempUserEmail, setTempUserEmail] = useState('');
+
+  // Check for User Name on mount
+  useEffect(() => {
+      if (!settings.userName || !settings.userEmail) {
+          setShowNameModal(true);
+      }
+  }, [settings.userName, settings.userEmail]);
+
   useEffect(() => {
     if (isEditing) {
         const contact = contacts.find(c => c.id === editId);
@@ -34,6 +46,25 @@ const AddContact: React.FC = () => {
         }
     }
   }, [editId, contacts, isEditing]);
+
+  const handleSaveIdentity = () => {
+      if (!tempUserName.trim() || !tempUserEmail.trim()) {
+          alert('为激活云端服务，您的称呼和邮箱为必填项。');
+          return;
+      }
+      updateSettings({ 
+          userName: tempUserName.trim(),
+          userPhone: tempUserPhone.trim(),
+          userEmail: tempUserEmail.trim()
+      });
+      setShowNameModal(false);
+      addNotification('信息补全', '您的身份信息已保存，请继续添加联系人。', 'system');
+  };
+
+  const handleCloseIdentityModal = () => {
+    setShowNameModal(false);
+    navigate('/manage', { state: { tab: 'contacts' } }); // Go back to the contacts list
+  };
 
   const validatePhone = (phoneStr: string) => {
       // Strict 11-digit mobile number starting with 1
@@ -86,6 +117,8 @@ const AddContact: React.FC = () => {
           setErrorMsg('邮箱地址格式不正确，请修改。');
           return;
       }
+      
+      const isFirstContact = contacts.length === 0;
 
       const contactData: Contact = {
           id: isEditing && editId ? editId : Date.now().toString(),
@@ -103,14 +136,15 @@ const AddContact: React.FC = () => {
       } else {
           addContact(contactData);
           addNotification('联系人添加', `已添加 ${name} 为紧急联系人。`, 'system');
-          
-          // Trigger dummy communication only on add
-          if (phone) CommunicationService.sendSMS({ to: phone, body: `You have been added as an emergency contact for ${name}.` });
-          if (email) CommunicationService.sendEmail({ to: email, subject: 'Emergency Contact Verification', body: `You are now a verified contact.` });
       }
 
-      // Navigate back to the Manage->Contacts tab
-      navigate('/manage', { state: { tab: 'contacts' } });
+      // Smart navigation after submit
+      if (!isEditing && isFirstContact && !status.isAuthorized) {
+          addNotification('前置条件已满足', '太棒了！现在可以去激活云端服务了。', 'system');
+          navigate('/auth');
+      } else {
+          navigate('/manage', { state: { tab: 'contacts' } });
+      }
   };
 
   const handleBack = () => {
@@ -119,6 +153,57 @@ const AddContact: React.FC = () => {
 
   return (
     <Layout showBottomNav={false}>
+      {/* Identity Missing Modal */}
+      {showNameModal && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/90 backdrop-blur-md">
+              <div className="bg-medical-panel border border-primary text-white p-6 rounded-xl shadow-[0_0_30px_rgba(57,255,20,0.2)] max-w-sm w-full animate-fade-in relative">
+                   <button onClick={handleCloseIdentityModal} className="absolute top-2 right-2 size-8 flex items-center justify-center text-slate-500 hover:text-white transition-colors">
+                       <span className="material-symbols-outlined">close</span>
+                   </button>
+                   <div className="flex items-center gap-2 mb-4 text-primary">
+                      <span className="material-symbols-outlined text-2xl">badge</span>
+                      <span className="font-bold text-lg uppercase tracking-wider">身份补全</span>
+                   </div>
+                   <p className="text-sm text-slate-300 mb-4 leading-relaxed">
+                       为激活云端服务，请先设置<strong>您的称呼</strong>及联系方式。
+                       <br/><span className="text-xs text-slate-500">这确保了在紧急情况下，系统可以联系到您并正确识别您的身份。</span>
+                   </p>
+                   <div className="mb-4 space-y-3">
+                       <input 
+                           type="text" 
+                           placeholder="输入您的姓名或昵称 *"
+                           value={tempUserName}
+                           onChange={(e) => setTempUserName(e.target.value)}
+                           className="w-full bg-black/50 border border-white/20 rounded px-4 py-3 text-white focus:border-primary focus:ring-0 outline-none transition-colors"
+                           autoFocus
+                       />
+                       <input 
+                           type="email" 
+                           placeholder="本人邮箱 (必填) *"
+                           value={tempUserEmail}
+                           onChange={(e) => setTempUserEmail(e.target.value)}
+                           className="w-full bg-black/50 border border-white/20 rounded px-4 py-3 text-white focus:border-primary focus:ring-0 outline-none transition-colors"
+                       />
+                       <input 
+                           type="tel" 
+                           placeholder="本人手机号 (可选)"
+                           value={tempUserPhone}
+                           onChange={(e) => setTempUserPhone(e.target.value)}
+                           className="w-full bg-black/50 border border-white/20 rounded px-4 py-3 text-white focus:border-primary focus:ring-0 outline-none transition-colors"
+                       />
+                       <p className="text-xs text-slate-600 px-1">称呼和邮箱为激活服务的必填项</p>
+                   </div>
+                   <button 
+                    onClick={handleSaveIdentity}
+                    disabled={!tempUserName.trim() || !tempUserEmail.trim()}
+                    className="w-full py-3 bg-primary text-black rounded-lg font-bold uppercase tracking-wider hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-[0_0_10px_rgba(57,255,20,0.3)]"
+                   >
+                    保存并继续
+                   </button>
+              </div>
+          </div>
+      )}
+
       {/* Custom Error Modal */}
       {errorMsg && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
@@ -216,14 +301,14 @@ const AddContact: React.FC = () => {
               <input 
                 type="radio" 
                 name="role" 
-                checked={role === '受益人'} 
-                onChange={() => setRole('受益人')} 
+                checked={role === '资产对接人'} 
+                onChange={() => setRole('资产对接人')} 
                 className="hidden peer" 
               />
               <div className="flex flex-col items-center justify-center p-4 rounded-lg bg-medical-panel border border-white/10 peer-checked:border-primary/50 peer-checked:bg-primary/5 transition-all text-center h-full hover:border-white/20">
-                <span className="material-symbols-outlined text-slate-500 group-hover:text-primary mb-2 peer-checked:text-primary">contract</span>
-                <span className="text-sm font-bold text-slate-300 peer-checked:text-primary">受益人</span>
-                <span className="text-[9px] text-slate-500 mt-1">资产继承</span>
+                <span className="material-symbols-outlined text-slate-500 group-hover:text-primary mb-2 peer-checked:text-primary">inventory_2</span>
+                <span className="text-sm font-bold text-slate-300 peer-checked:text-primary">资产对接人</span>
+                <span className="text-[9px] text-slate-500 mt-1">备忘录接收</span>
               </div>
             </label>
           </div>
@@ -243,6 +328,17 @@ const AddContact: React.FC = () => {
             />
             <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-slate-400 after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary peer-checked:after:bg-white"></div>
           </label>
+        </div>
+        
+        {/* Anti-Harassment Warning */}
+        <div className="bg-orange-900/10 border border-orange-500/20 rounded-lg p-3 flex gap-3">
+            <span className="material-symbols-outlined text-orange-500 text-lg shrink-0 mt-0.5">gavel</span>
+            <div className="flex flex-col gap-1">
+                <p className="text-orange-500 text-[10px] font-bold uppercase tracking-widest">法律风险提示</p>
+                <p className="text-[10px] text-orange-300/80 leading-relaxed text-justify">
+                    需确保填写的联系方式正确且非陌生人。如利用本系统恶意骚扰他人（如填写虚假号码或陌生人信息），您将承担由此产生的一切法律责任，且您的账号将被永久封禁。
+                </p>
+            </div>
         </div>
 
         <div className="flex gap-3 px-2">
